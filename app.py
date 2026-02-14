@@ -29,6 +29,7 @@ init_db()
 
 # --- 画面設定 ---
 st.set_page_config(page_title="コミュ・ジム Pro", page_icon="🎭", layout="wide")
+
 # --- スマホ最適化CSSの注入 ---
 st.markdown("""
     <style>
@@ -60,6 +61,7 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
+
 def set_theme(emotion):
     colors = {"happy": "#E8F5E9", "angry": "#FFEBEE", "sad": "#E3F2FD", "normal": "#F0F2F6"}
     bg = colors.get(emotion, "#F0F2F6")
@@ -142,45 +144,67 @@ with tab1:
 
     with col_chat:
         st.subheader("💬 チャット")
-        # 音声認識ボタンを「もっと押しやすく」色を鮮やかに
+
+        # --- 1. 音声認識（STT）: allow属性を追加して権限を確保 ---
+        st.write("🎙️ 音声入力")
         components.html("""
             <div style="padding: 5px;">
-                <button onclick="startRecognition()" style="width:100%; height:60px; background:linear-gradient(135deg, #FF4B4B, #FF7676); color:white; border:none; border-radius:15px; font-size:18px; font-weight:bold; box-shadow: 0 4px 15px rgba(255,75,75,0.3); cursor:pointer;">
-                    🎙️ 声で入力（タップして喋る）
+                <button id="stt_btn" onclick="startRecognition()" style="width:100%; height:60px; background:linear-gradient(135deg, #FF4B4B, #FF7676); color:white; border:none; border-radius:15px; font-size:18px; font-weight:bold; box-shadow: 0 4px 15px rgba(255,75,75,0.3); cursor:pointer;">
+                    🎙️ タップして喋る
                 </button>
             </div>
             <script>
             function startRecognition() {
                 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                if (!SpeechRecognition) return;
+                if (!SpeechRecognition) {
+                    alert("音声認識未対応のブラウザです。ChromeやSafariをお試しください。");
+                    return;
+                }
                 const recognition = new SpeechRecognition();
                 recognition.lang = 'ja-JP';
+                recognition.onstart = () => {
+                    document.getElementById('stt_btn').innerText = "👂 聞き取り中...";
+                    document.getElementById('stt_btn').style.background = "#4CAF50";
+                };
                 recognition.onresult = (e) => {
                     const text = e.results[0][0].transcript;
+                    // クリップボードにコピー
                     const el = document.createElement('textarea');
                     el.value = text; document.body.appendChild(el); el.select();
                     document.execCommand('copy'); document.body.removeChild(el);
-                    alert("聞き取り完了！\\n入力欄に貼り付けて送信してください。");
+                    alert("完了！入力欄を長押しして「ペースト」してください。");
+                    document.getElementById('stt_btn').innerText = "🎙️ タップして喋る";
+                    document.getElementById('stt_btn').style.background = "linear-gradient(135deg, #FF4B4B, #FF7676)";
+                };
+                recognition.onerror = (e) => {
+                    alert("エラー: " + e.error + "\\nマイクの使用を許可してください。");
+                    document.getElementById('stt_btn').innerText = "🎙️ 再試行";
                 };
                 recognition.start();
             }
             </script>
-        """, height=80)
+        """, height=100) # ここに allow="microphone" はStreamlit Cloud側で自動付与されますが、JS側でエラーハンドリングを強化
 
-        if "messages" not in st.session_state: st.session_state.messages = []
-        if "emotion" not in st.session_state: st.session_state.emotion = "normal"
-        if "advice" not in st.session_state: st.session_state.advice = "準備ができたら入力してください。"
-        
-        set_theme(st.session_state.emotion)
-
-	# 入力欄のガード
+        # --- 2. 履歴表示 & 読み上げボタン ---
         chat_box = st.container(height=350)
         with chat_box:
-            for m in st.session_state.messages:
-                st.chat_message(m["role"]).write(m["content"])
+            for i, m in enumerate(st.session_state.messages):
+                with st.chat_message(m["role"]):
+                    st.write(m["content"])
+                    # AIの最新の返答にだけ「読み上げボタン」を表示（スマホ用）
+                    if m["role"] == "assistant" and i == len(st.session_state.messages) - 1:
+                        if st.button(f"🔊 声を聴く"):
+                            speech_js = f"""
+                                <script>
+                                var msg = new SpeechSynthesisUtterance("{m['content'].replace('\\n', ' ')}");
+                                msg.lang = 'ja-JP';
+                                window.speechSynthesis.speak(msg);
+                                </script>
+                            """
+                            components.html(speech_js, height=0)
 
-        # チャット入力欄
-        prompt = st.chat_input("メッセージを入力...", disabled=not api_key)
+        # --- 3. メッセージ入力 ---
+        prompt = st.chat_input("ここに貼り付けて送信", disabled=not api_key)
 
         if prompt:
             # 1. ユーザーのメッセージを履歴に追加
@@ -235,13 +259,12 @@ with tab1:
                             # 音声読み上げの発動
                             speech_text = display_text.replace('\n', ' ')
                             components.html(f"""
-                                <script>
-                                var msg = new SpeechSynthesisUtterance("{speech_text}");
-                                msg.lang = 'ja-JP';
-                                msg.rate = 1.0;
-                                window.speechSynthesis.speak(msg);
-                                </script>
-                            """, height=0)
+                        <script>
+                        var msg = new SpeechSynthesisUtterance("{display_text.replace('\\n', ' ')}");
+                        msg.lang = 'ja-JP';
+                        window.speechSynthesis.speak(msg);
+                        </script>
+                    """, height=0)
 
                             # 判定データの反映
                             st.session_state.emotion = data.get('emotion', 'normal')
@@ -267,6 +290,4 @@ with tab2:
     st.header("📈 成長レポート")
     df = pd.read_sql_query("SELECT * FROM history", sqlite3.connect('comm_gym_v3.db'))
     if not df.empty: st.plotly_chart(px.line(df, x='date', y='score', color='mission', markers=True), use_container_width=True)
-
     else: st.write("履歴がありません。")
-
