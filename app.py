@@ -47,7 +47,7 @@ with st.sidebar:
     st.progress(min((len(df_h) % 3) / 3, 1.0), text="次のレベルまで")
     
     st.divider()
-    api_key = st.text_input("Gemini API Key", type="password")
+    api_key = st.secrets["GEMINI_API_KEY"]
 
 # --- サイドバー：モード選択 ---
 mode = st.sidebar.radio("🏋️ トレーニングモード", ["ビジネス・仕事", "プライベート・恋愛"])
@@ -234,4 +234,5 @@ with tab2:
     st.header("📈 成長レポート")
     df = pd.read_sql_query("SELECT * FROM history", sqlite3.connect('comm_gym_v3.db'))
     if not df.empty: st.plotly_chart(px.line(df, x='date', y='score', color='mission', markers=True), use_container_width=True)
+
     else: st.write("履歴がありません。")
