@@ -29,7 +29,37 @@ init_db()
 
 # --- 画面設定 ---
 st.set_page_config(page_title="コミュ・ジム Pro", page_icon="🎭", layout="wide")
-
+# --- スマホ最適化CSSの注入 ---
+st.markdown("""
+    <style>
+    /* 全体の余白を削ってフルスクリーンに近づける */
+    .block-container {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+    }
+    
+    /* ボタンを指で押しやすく大きくする */
+    div.stButton > button {
+        width: 100%;
+        height: 3.5rem;
+        border-radius: 15px;
+        font-size: 1.1rem;
+        font-weight: bold;
+    }
+    
+    /* チャット入力欄のフォントサイズ調整（ズーム防止） */
+    input {
+        font-size: 16px !important;
+    }
+    
+    /* タブの文字を大きくする */
+    .stTabs [data-baseweb="tab"] {
+        font-size: 1.1rem;
+    }
+    </style>
+""", unsafe_allow_html=True)
 def set_theme(emotion):
     colors = {"happy": "#E8F5E9", "angry": "#FFEBEE", "sad": "#E3F2FD", "normal": "#F0F2F6"}
     bg = colors.get(emotion, "#F0F2F6")
@@ -77,29 +107,24 @@ tab1, tab2 = st.tabs(["🔥 トレーニング", "📊 成長レポート"])
 
 
 with tab1:
-    col_vis, col_chat = st.columns([1, 1.2])
+    # スマホでは縦に並び、PCでは横に並ぶ設定
+    # gap="small" にして間隔を詰めます
+    col_vis, col_chat = st.columns([1, 1.2], gap="small")
 
     with col_vis:
-        st.subheader("🖼️ 非言語チェック (55%)")
+        st.subheader("🖼️ 見た目チェック")
+        # カメラ入力を少し小さめに表示する工夫
+        img_cam = st.camera_input("タップして撮影")
         
-        # --- 画像入力の2つの方法 ---
-        img_cam = st.camera_input("1. 今すぐカメラで撮影")
-        img_file = st.file_uploader("2. または画像をアップロード", type=['png', 'jpg', 'jpeg'])
-        
-        # 最終的にAIに送る画像を選択（カメラ優先）
-        final_img = None
-        if img_cam:
-            final_img = Image.open(img_cam)
-            st.success("カメラ画像を使用します")
-        elif img_file:
-            final_img = Image.open(img_file)
-            st.success("アップロード画像を使用します")
+        # ファイルアップローダーは「参照」ボタンが小さいので、
+        # スマホではカメラ入力をメインに使う想定で、アップローダーはexpanderに隠すのもアリ
+        with st.expander("または画像をアップロード"):
+            img_file = st.file_uploader("", type=['png', 'jpg', 'jpeg'])
 
-        st.divider()
-        st.write("🎙️ 聴覚情報モニター (38%)")
-        # 前回のJavaScript音量モニター
+        # 音量モニターも高さを抑える
+        st.write("🎙️ 声の大きさ")
         components.html("""
-            <canvas id="m" width="300" height="20" style="width:100%; height:20px; background:#eee;"></canvas>
+            <canvas id="m" width="300" height="15" style="width:100%; height:15px; background:#eee; border-radius:10px;"></canvas>
             <script>
                 navigator.mediaDevices.getUserMedia({audio:true}).then(s=>{
                     const ac=new AudioContext(); const an=ac.createAnalyser();
@@ -107,32 +132,40 @@ with tab1:
                     const cv=document.getElementById('m'), cx=cv.getContext('2d');
                     function draw(){
                         an.getByteFrequencyData(d); let v=d.reduce((a,b)=>a+b)/d.length;
-                        cx.clearRect(0,0,300,20); cx.fillStyle='#FF4B4B'; cx.fillRect(0,0,v*5,20);
+                        cx.clearRect(0,0,300,15); cx.fillStyle='#FF4B4B'; cx.fillRect(0,0,v*5,15);
                         requestAnimationFrame(draw);
                     }
                     draw();
                 });
             </script>
-        """, height=50)
+        """, height=25)
 
     with col_chat:
-        st.subheader("💬 対話 & 評価 (7%)")
-        
-        # --- 音声認識（Speech to Text）ボタン ---
+        st.subheader("💬 チャット")
+        # 音声認識ボタンを「もっと押しやすく」色を鮮やかに
         components.html("""
+            <div style="padding: 5px;">
+                <button onclick="startRecognition()" style="width:100%; height:60px; background:linear-gradient(135deg, #FF4B4B, #FF7676); color:white; border:none; border-radius:15px; font-size:18px; font-weight:bold; box-shadow: 0 4px 15px rgba(255,75,75,0.3); cursor:pointer;">
+                    🎙️ 声で入力（タップして喋る）
+                </button>
+            </div>
             <script>
             function startRecognition() {
-                const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SpeechRecognition) return;
+                const recognition = new SpeechRecognition();
                 recognition.lang = 'ja-JP';
                 recognition.onresult = (e) => {
                     const text = e.results[0][0].transcript;
-                    window.parent.postMessage({type: 'streamlit:set_component_value', value: text}, '*');
+                    const el = document.createElement('textarea');
+                    el.value = text; document.body.appendChild(el); el.select();
+                    document.execCommand('copy'); document.body.removeChild(el);
+                    alert("聞き取り完了！\\n入力欄に貼り付けて送信してください。");
                 };
                 recognition.start();
             }
             </script>
-            <button onclick="startRecognition()" style="width:100%; padding:10px; background:#FF4B4B; color:white; border:none; border-radius:5px; cursor:pointer;">🎙️ 声で入力する（クリックして喋る）</button>
-        """, height=60)
+        """, height=80)
 
         if "messages" not in st.session_state: st.session_state.messages = []
         if "emotion" not in st.session_state: st.session_state.emotion = "normal"
@@ -236,3 +269,4 @@ with tab2:
     if not df.empty: st.plotly_chart(px.line(df, x='date', y='score', color='mission', markers=True), use_container_width=True)
 
     else: st.write("履歴がありません。")
+
